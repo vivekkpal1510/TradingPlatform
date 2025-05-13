@@ -9,4 +9,8 @@ public class Home {
     public String home(){
         return "Welcome to Trading Platform!";
     }
+    @GetMapping("/api/one")
+    public String hii(){
+        return "hello";
+    }
 }
