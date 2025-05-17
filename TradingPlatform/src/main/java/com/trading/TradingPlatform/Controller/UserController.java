@@ -1,15 +1,21 @@
 package com.trading.TradingPlatform.Controller;
 
-import com.trading.TradingPlatform.Service.EmailService;
-import com.trading.TradingPlatform.Service.UserService;
-import com.trading.TradingPlatform.Service.VerificationCodeService;
+import com.trading.TradingPlatform.Request.ForgotPasswordTokenRequest;
+import com.trading.TradingPlatform.Request.ResetPasswordRequest;
+import com.trading.TradingPlatform.Service.*;
+import com.trading.TradingPlatform.Utils.OtpUtils;
 import com.trading.TradingPlatform.domain.VerificationType;
+import com.trading.TradingPlatform.modal.ForgotPasswordToken;
 import com.trading.TradingPlatform.modal.User;
 import com.trading.TradingPlatform.modal.VerificationCode;
+import com.trading.TradingPlatform.response.ApiResponse;
+import com.trading.TradingPlatform.response.AuthResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.UUID;
 
 @RestController
 public class UserController {
@@ -19,6 +25,9 @@ public class UserController {
     private UserService userService;
     @Autowired
     private VerificationCodeService verificationCodeService;
+
+    @Autowired
+    private ForgotPasswordService forgotPasswordService;
 
     @GetMapping("/api/user/profile")
     public ResponseEntity<User> getUserProfile(
@@ -65,5 +74,44 @@ public class UserController {
         throw new Exception("Invalid OTP");
     }
 
-}
 
+    @PostMapping("auth/user/reset-password/send-otp")
+    public ResponseEntity<AuthResponse> sendForgetPasswordOtp(
+            @RequestBody ForgotPasswordTokenRequest req
+            ) throws Exception {
+        User user = userService.findUserByEmail(req.getSendTo());
+        String otp = OtpUtils.generateOtp();
+        UUID uuid = UUID.randomUUID();
+        String id = uuid.toString();
+        ForgotPasswordToken token = forgotPasswordService.findByUser(user.getId());
+        if(token == null){
+            token = forgotPasswordService.createToken(user,id, otp, req.getVerificationType(), req.getSendTo());
+        }
+        if(req.getVerificationType().equals(VerificationType.EMAIL)){
+            emailService.sendVarificationMail(user.getEmail(),token.getOtp());
+        }
+        AuthResponse res = new AuthResponse();
+        res.setSession(token.getId());
+        res.setMessage("Password reset OTP sent");
+
+        return new ResponseEntity <>(res, HttpStatus.OK);
+    }
+
+    @PatchMapping("auth/user/reset-password/verify-otp")
+    public ResponseEntity<ApiResponse> resetPassword(
+            @RequestParam String id ,
+            @RequestBody ResetPasswordRequest req ,
+            @RequestHeader("Authorization") String jwt
+    ) throws Exception{
+        ForgotPasswordToken forgotPasswordToken = forgotPasswordService.findById(id);
+        boolean isVerified = forgotPasswordToken.getOtp().equals(req.getOtp());
+        if(isVerified){
+            userService.updatePassword(forgotPasswordToken.getUser(),req.getPassword());
+            ApiResponse apiResponse = new ApiResponse();
+            apiResponse.setMessage("Password reset OTP sent");
+            return new ResponseEntity<>(apiResponse,HttpStatus.ACCEPTED);
+        }
+        throw new Exception("Invalid OTP");
+    }
+
+}
